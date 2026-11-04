@@ -14,6 +14,8 @@
 
 Trước khi dựng một pattern, chụp màn hình frame tham chiếu tương ứng (`get_screenshot`) để đối chiếu.
 
+> **Lưu ý:** màn mẫu `962:134238` có 61 override vi phạm và nhiều component đến từ thư viện ngoài (xem `component-gaps.md`). Dùng màn mẫu để tham chiếu **bố cục** và **giá trị prop**, không sao chép override, không coi kích thước/màu trên màn mẫu là chuẩn khi khác main component.
+
 ## Layout chung (shell) — frame 1440 × 822, desktop
 
 ```
@@ -36,25 +38,29 @@ Lấy main component từ instance trên màn hình tham chiếu `962:134238` r�
 |---|---|---|
 | Menu | `2873:437560` | set `Menu` cục bộ, variant `expand=no, channel=no` |
 | Top bar | `2888:791426` | set `Top bar` cục bộ, `avatar=no, State=Default, Name=YES` |
-| tab navigation | `962:134242` | set `tab navigation` (thư viện), `tab=3` |
+| tab navigation | `962:134242` | set `tab navigation` (B2 CRM-ext), `tab=3` |
 | Page header | `965:180819` | set `Page header` cục bộ, `Level=Level 3`, bool `Show action group#962:0` |
 | Filter | `962:134269` | set `Filter` cục bộ |
-| table-header (cột No.) | `962:134272` | `table-header` (thư viện) |
-| table-header (cột thường) | `962:134285` | `table-header` (thư viện) |
-| table-cell chữ | `962:134274` | `table-cell` `Type=Text` (text node tên `Item Text`) |
+| table-header (cột No.) | `962:134272` | `table-header` (B2 CRM-ext) |
+| table-header (cột thường) | `962:134285` | `table-header` (B2 CRM-ext) |
+| table-cell chữ | `962:134274` | `table-cell` `Type=Text` (B2 CRM-ext; text node tên `Item Text`) |
 | table-cell hành động | `962:134438` → `data` → cell đầu | `table-cell` `Type=Slot` (sửa + xem) |
-| Pagination | `962:134501` | set `Pagination` (thư viện) |
+| Pagination | `962:134501` | set `Pagination` (A thư viện Component) |
 
 Tuỳ biến sau khi tạo:
 - **Menu**: các instance con tên `_menu` có text là tên module; đặt `active=yes` cho module hiện tại, `no` cho phần còn lại.
 - **tab navigation**: các instance con tên `tab` (`active`, `end`). Mặc định tab "Home" đang active, cần đổi `active=no` cho Home và `active=yes` cho tab của màn hình.
-- **Page header**: breadcrumb mặc định là `Level 1` / `Level 2`, tiêu đề là text `Title`. Nhóm hành động có 3 nút (Ghost, Secondary, Primary); ẩn nút không dùng bằng `visible=false`.
+- **Page header**: breadcrumb mặc định là `Level 1` / `Level 2`, tiêu đề là text `Title` (sửa nội dung chữ, không đổi style). Nhóm hành động có 3 nút (Ghost, Secondary, Primary); chỉ ẩn qua BOOLEAN prop (`Show action group#962:0` hoặc prop của từng nút nếu có). Không có prop cho nút cần ẩn → giữ nguyên và ghi vào `component-gaps.md`, không đặt `visible=false` trực tiếp.
 
 ### Lỗi đã gặp khi chạy thử (phải xử lý)
+- **Chữ gắn TEXT prop của instance lồng** (breadcrumb/nút của `Page header`, nhãn `tab`, nút `Standard Button`): sửa `characters` không giữ được → đọc `componentPropertyReferences.characters` của text node rồi `setProperties({[ref]: …})` trên instance lồng sở hữu prop đó.
+- **Tìm frame theo tên phải đi từ cha trực tiếp** (`content.children.find(...)`), không dùng `M.findOne(n => n.name === 'main content')`: `Page header` cũng có frame con tên `main content` → sửa nhầm layout bên trong instance (thành override).
+- **Frame layout HUG tạo bằng script có thể render sai chiều cao** (screenshot/server vẫn giữ 100px mặc định của `createFrame()` dù plugin báo đúng). Sau khi thêm đủ con: đặt `layoutSizingVertical='FIXED'`, `resize(w, h thật)`, rồi trả lại `counterAxisSizingMode='AUTO'` / HUG; chụp lại để xác nhận.
+- **Đổi `active` của `tab` lồng trong `tab navigation`** có thể sinh override `width/height` trên `tab` → thay bằng bản clone `tab navigation` từ frame mình vừa dựng sạch (đã đúng tab active), hoặc tạo lại instance.
 - **Filter** tạo mới hiện cả tab và tiêu đề → copy prop BOOLEAN/VARIANT từ `962:134269` (`Tab=false`, `Show title table=false`).
 - **table-header** tạo mới hiện checkbox → copy prop từ header tham chiếu (`Show Checkbox=false`; cột No. còn `Show filter=false`).
-- **Cell hành động** (`Type=Slot`): nội dung slot là override trên instance, `createInstance()` cho ra ô trống → phải `clone()` cell tham chiếu.
-- **Pagination** tạo mới mất padding → bind `paddingTop/Bottom = spacing/s100`, `paddingLeft/Right = spacing/s200`.
+- **Cell hành động** (`Type=Slot`): nội dung slot là override trên instance, `createInstance()` cho ra ô trống → `clone()` cell tham chiếu. Đây là **ngoại lệ đã duyệt** duy nhất được clone (xem `component-gaps.md`); audit sẽ bỏ qua override bên trong cell này.
+- **Pagination** tạo mới không có padding như màn mẫu (màn mẫu đang override padding). **Không** bind padding lên instance. Dùng đúng component; nếu cần lề, đặt Pagination trong frame layout `pagination` có padding token (s100 / s200). Đã ghi vào `component-gaps.md`.
 - Khi copy prop từ instance khác, **chỉ** lấy prop `BOOLEAN`/`VARIANT`; prop `INSTANCE_SWAP` gây lỗi `setProperties`.
 
 Chi tiết từng phần:
@@ -72,11 +78,16 @@ main content
 └── Table (w1312)
     ├── Filter      instance h48 (chỉ search) hoặc h92 (title + action)
     │                 nút filter (Icon Button / Secondary) + ô search "Label" + bên phải: setting, download
-    ├── table       frame (cột ngang)
+    ├── table       frame (cột ngang), FILL ngang × HUG dọc — cao theo số dòng, không FILL dọc
     │   └── col ×N  = table-header (h44) + data (table-cell h50 mỗi dòng)
     │                 cột 1: "No." (w56); cột cuối: action (Icon Button / Ghost: sửa, xem), ghim phải
-    └── Pagination  instance h48 ("10/page" + "Total N items" trái, số trang phải)
+    │                 tối đa 10 dòng (khớp "10/page" của Pagination); col và data cũng HUG dọc
+    └── Pagination  instance h48 ("10/page" + "Total N items" trái, số trang phải), nằm ngay dưới table
 ```
+
+- `table` **HUG dọc**: `table.layoutSizingVertical = 'HUG'` (ngang giữ FILL để cột FILL như Email co giãn theo `main content`).
+- **Tối đa 10 dòng** dữ liệu mỗi bảng. Dữ liệu nhiều hơn → chỉ dựng 10 dòng và thể hiện phần còn lại qua `Pagination` ("Total N items", số trang).
+- 10 dòng = 44 + 10 × 50 = 544px. Cộng `Filter` (48) và `pagination` (48) là 640px, cao hơn phần `main content` còn lại trong frame 1440×822 (622px). Muốn đủ 10 dòng thì cho frame màn hình cao theo nội dung (HUG dọc, hoặc đặt chiều cao ≥ 840); giữ 822 thì tối đa 9 dòng.
 
 ## Pattern 2 — Tree + List
 
@@ -86,18 +97,19 @@ Như Pattern 1, nhưng `main content` chia đôi:
 
 ## Pattern 3 — Drawer form (Create / Edit)
 
-Cách dựng nhanh: `clone()` frame List vừa dựng, rồi `clone()` `overlay` (`962:133856`) và `Drawer` (`962:133857`) từ màn `Edit`, đặt `layoutPositioning='ABSOLUTE'` (overlay 0,0 1440×822; Drawer x981). Sau đó đổi tiêu đề, nhãn nút, `Title`/`Label` của từng trường, và đưa `state` của trường về `Default` (bản mẫu có trường `Filled`/`Read-only`). Drawer mẫu có gap 15 và padding 10 lệch lưới → đổi về token (16 = s200, 8 = s100). Đổi tên `title` trên/dưới thành `header`/`footer`, các hàng `Frame 13213155xx` thành `row`. Tiêu đề drawer dùng text style `title/size-m/medium`.
+Cách dựng: `clone()` frame List **vừa dựng sạch** (được phép vì không chứa override), rồi tự dựng `overlay` và `Drawer` bằng frame layout, đặt `layoutPositioning='ABSOLUTE'` (overlay 0,0 1440×822; Drawer x981). **Không clone overlay/Drawer từ màn `Edit`** — các trường trong đó đang ở state `Filled`/`Read-only` và có thể mang override. Container Drawer (frame `header` / `body` / `footer`, các `row`) là frame layout → bind token (gap/padding s200, s300; nền `surface/neutral/white`; `shadow/E2`). Mọi trường và nút bên trong tạo mới bằng `createInstance()` từ key, đặt variant `state` qua `setProperties` (`data entry`: Create → `default`, Edit → `filled`, chỉ đọc → `read-only`), điền nhãn qua TEXT prop/nội dung chữ, FILL ngang trong `row`. Tiêu đề drawer: text node trong frame layout, text style `title/size-m/medium`. Nếu component `Drawer` thư viện (key `9f2d8e6a…`) có slot nội dung dùng được thì ưu tiên dùng nó thay cho frame tự dựng — cần xác minh (xem `component-gaps.md`).
 
 Giữ nguyên shell + nội dung List phía sau, thêm:
 ```
 overlay   frame 1440×822, fill color/global/black-alpha/8 (#00000066)
 Drawer    frame x981 w459 h822, nền trắng, shadow E2
-├── title   h48: tiêu đề (title/size-s/semibold hoặc lớn hơn theo mẫu) + nút đóng ic_cancel_01
-├── body    h714: form, padding 24, lưới 2 cột (gap 16), mỗi trường = label trên + control h36
-│            trường dài (Region, Title…) chiếm cả 2 cột
-│            control: 🚧 Input normal / Select / Single Choice / ❖selectDate
-│            trường chỉ đọc dùng state "information" (nền surface/neutral/lighter-1)
-└── action  h60: căn phải — Standard Button / Secondary (Cancel) + Standard Button / Primary (Update/Save)
+├── header  h48: tiêu đề (title/size-m/medium) + Icon Button / Ghost đóng (ic_cancel_01)
+├── body    h714: form, padding s300 (24), các frame `row` (gap s200 = 16), mỗi row 1–2 trường
+│            instance trường FILL ngang trong row; chiều cao giữ theo variant (58)
+│            trường dài (Region, Title…) một mình một row
+│            control: `data entry` (B1) — Type/sub type theo SKILL.md (instance mới, không clone)
+│            trường chỉ đọc: variant State=read-only (không tô nền thủ công)
+└── footer  h60: căn phải — Standard Button / Secondary (Cancel) + Standard Button / Primary (Update/Save), giữ nguyên kích thước
 ```
 
 ## Pattern 4 — Detail
@@ -146,7 +158,7 @@ Cùng shell; nội dung hiển thị dạng cặp label/giá trị (label `text/
 | Standard Button / Primary | set | `fba0a8c6076b5ff6dfea80f1cbb26ac8a9fbe799` |
 | Standard Button / Secondary | set | `47246838ac19d21832c7d0bfc84a7eebf3e41353` |
 | Standard Button / Ghost | set | `abd85553de5eb26bc86d6aae49314be504fd7bc8` |
-| 🚧 Input normal | set | `b1f14a205122c0edf170bda9a7719dca48392ab2` |
+| ~~🚧 Input normal~~ | set | **Cấm** — dùng `data entry` (CRM-HR-WEB `1068:91679`) |
 | Input | set | `fe54618994e3f8a86ca856e82647bfd4d3222be2` |
 | Select / Single Choice | set | `74d65c1deac512024126ae2fbe9eb070799c3e05` |
 | Drawer | component | `9f2d8e6a1f116b3aa8b6ee028c4c67da2e9b4ccc` |
